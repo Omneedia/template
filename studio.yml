@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  app:
+    image: nginx
+    volumes:
+      - ./config/nginx:/etc/nginx/conf.d
+    ports:
+      - 8080:80
+    networks:
+      - app
+    depends_on:
+      - pgadmin
+      - realtime
+      - rest
+      - auth
+      - storage
+  auth:
+    image: omneedia/auth:1.0.0
+    depends_on:
+      - db
+    ports:
+      - 3000:3000
+    networks:
+      - app
+    environment:
+      QUADRICIA_AUTH_URI: ${QUADRICIA_URI}
+      QUADRICIA_AUTH_DB_URI: postgres://postgres:${QUADRICIA_POSTGRES_PASSWORD}@db/postgres?search_path=auth
+      QUADRICIA_AUTH_JWT_SECRET: ${QUADRICIA_AUTH_JWT_SECRET}
+      QUADRICIA_AUTH_JWT_EXP: 7200
+      QUADRICIA_AUTH_JWT_DEFAULT_GROUP_NAME: authenticated
+      QUADRICIA_AUTH_PREFIX: /auth/v1
+      QUADRICIA_AUTH_PORT: 3000
+  meta:
+    image: omneedia/meta:1.0.0
+    depends_on:
+      - db
+    networks:
+      - app
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PASSWORD: ${QUADRICIA_POSTGRES_PASSWORD}
+  db:
+    image: omneedia/db
+    command: postgres -c wal_level=logical
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: ${QUADRICIA_POSTGRES_PASSWORD}
+    volumes:
+      - db:/var/lib/postgresql/data
+    networks:
+      - app
+  realtime:
+    image: omneedia/realtime
+    depends_on:
+      - db
+    networks:
+      - app
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: ${QUADRICIA_POSTGRES_PASSWORD}
+      DB_SSL: 'false'
+      PORT: 4000
+      JWT_SECRET: ${QUADRICIA_AUTH_JWT_SECRET}
+      REPLICATION_MODE: RLS
+      REPLICATION_POLL_INTERVAL: 100
+      SECURE_CHANNELS: 'true'
+      SLOT_NAME: omneedia_realtime_rls
+      TEMPORARY_SLOT: 'true'
+    command: >
+      bash -c "./prod/rel/realtime/bin/realtime eval Realtime.Release.migrate
+      && ./prod/rel/realtime/bin/realtime start"
+  rest:
+    image: omneedia/postgrest
+    depends_on:
+      - db
+    networks:
+      - app
+    environment:
+      PGRST_DB_URI: postgres://postgres:${QUADRICIA_POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${QUADRICIA_AUTH_JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: 'false'
+  storage:
+    image: omneedia/storage:0.9.3
+    networks:
+      - app
+    depends_on:
+      - db
+      - rest
+    environment:
+      ANON_KEY: ${QUADRICIA_ANON_KEY}
+      SERVICE_KEY: ${QUADRICIA_SERVICE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${QUADRICIA_AUTH_JWT_SECRET}
+      DATABASE_URL: postgres://postgres:${QUADRICIA_POSTGRES_PASSWORD}@db:5432/postgres
+      PGOPTIONS: -c search_path=storage,public
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      volumes:
+        - storage:/var/lib/storage      
+  pgadmin:
+    image: omneedia/pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@me.com
+      PGADMIN_DEFAULT_PASSWORD: password
+      PGADMIN_SERVER_JSON_FILE: /config/server.json
+    volumes:
+      - ./config/pgadmin:/config
+      - pgadmin:/var/lib/pgadmin
+    depends_on:
+      - db
+    networks:
+      - app
+
+
+networks:
+  app:
+    driver: overlay

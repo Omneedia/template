@@ -1,0 +1,16 @@
+variables:
+  - name: QUADRICIA_AUTH_JWT_SECRET
+    computed: make_jwt_secret
+    required: true
+  - name: QUADRICIA_URI
+    default: http://localhost/
+    required: true
+  - name: QUADRICIA_POSTGRES_PASSWORD
+    default: 0mneediaRulez!
+    required: true
+  - name: QUADRICIA_ANON_KEY
+    computed: make_anon_key
+    using: QUADRICIA_AUTH_JWT_SECRET
+  - name: QUADRICIA_SERVICE_KEY
+    computed: make_service_key
+    using: QUADRICIA_AUTH_JWT_SECRET
